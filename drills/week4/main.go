@@ -42,8 +42,13 @@ func NewBank(balances map[int]int64) (*Bank, error) {
 
 // Balance returns the current balance of one account.
 func (b *Bank) Balance(id int) (int64, error) {
-	// TODO: look up the account, read its balance safely
-	return 0, errNotImplemented
+
+	if _, ok := b.accounts[id]; !ok {
+		return 0, ErrAccountNotFound
+	}
+	b.accounts[id].mu.Lock()
+	defer b.accounts[id].mu.Unlock()
+	return b.accounts[id].balance, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +59,27 @@ func (b *Bank) Balance(id int) (int64, error) {
 // It is deliberately broken.
 func (b *Bank) TransferUnsafe(from, to int, amount int64) error {
 	// TODO: validate, check funds, move the money. No mutexes.
-	return errNotImplemented
+	if amount <= 0 {
+		return ErrInvalidAmount
+	}
+	if from == to {
+		return ErrSameAccount
+	}
+	fromAcc, ok := b.accounts[from]
+	if !ok {
+		return ErrAccountNotFound
+	}
+	toAcc, ok := b.accounts[to]
+	if !ok {
+		return ErrAccountNotFound
+	}
+	if fromAcc.balance < amount {
+		return ErrInsufficientFunds
+	}
+	fromAcc.balance -= amount
+	toAcc.balance += amount
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +90,31 @@ func (b *Bank) TransferUnsafe(from, to int, amount int64) error {
 // moves the money. It is deliberately broken.
 func (b *Bank) TransferNaiveLock(from, to int, amount int64) error {
 	// TODO: validate, lock from, lock to, check funds, move the money
-	return errNotImplemented
+	if amount <= 0 {
+		return ErrInvalidAmount
+	}
+	if from == to {
+		return ErrSameAccount
+	}
+	fromAcc, ok := b.accounts[from]
+	if !ok {
+		return ErrAccountNotFound
+	}
+	toAcc, ok := b.accounts[to]
+	if !ok {
+		return ErrAccountNotFound
+	}
+	fromAcc.mu.Lock()
+	toAcc.mu.Lock()
+	defer fromAcc.mu.Unlock()
+	defer toAcc.mu.Unlock()
+	if fromAcc.balance < amount {
+		return ErrInsufficientFunds
+	}
+	fromAcc.balance -= amount
+	toAcc.balance += amount
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -76,9 +125,39 @@ func (b *Bank) TransferNaiveLock(from, to int, amount int64) error {
 // for any number of concurrent callers and never deadlocks.
 func (b *Bank) Transfer(from, to int, amount int64) error {
 	// TODO: validate
+	if amount <= 0 {
+		return ErrInvalidAmount
+	}
+	if from == to {
+		return ErrSameAccount
+	}
+	fromAcc, ok := b.accounts[from]
+	if !ok {
+		return ErrAccountNotFound
+	}
+	toAcc, ok := b.accounts[to]
+	if !ok {
+		return ErrAccountNotFound
+	}
 	// TODO: lock both accounts in a way that can never deadlock
-	// TODO: check funds, move the money
-	return errNotImplemented
+
+	if from < to {
+		fromAcc.mu.Lock()
+		toAcc.mu.Lock()
+	} else {
+		toAcc.mu.Lock()
+		fromAcc.mu.Lock()
+	}
+	defer fromAcc.mu.Unlock()
+	defer toAcc.mu.Unlock()
+
+	if fromAcc.balance < amount {
+		return ErrInsufficientFunds
+	}
+	fromAcc.balance -= amount
+	toAcc.balance += amount
+
+	return nil
 }
 
 func main() {
