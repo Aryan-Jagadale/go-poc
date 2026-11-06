@@ -276,6 +276,7 @@ func TestShutdown_DeadlineCancelsJobs(t *testing.T) {
 	err := p.Submit(Job{Run: func(ctx context.Context) error {
 		close(started)
 		<-ctx.Done()
+		time.Sleep(50 * time.Millisecond) // cleanup, like rolling back a charge
 		sawCancel.Store(true)
 		return ctx.Err()
 	}})
@@ -305,7 +306,7 @@ func TestShutdown_DeadlineCancelsJobs(t *testing.T) {
 		t.Fatalf("Shutdown took %v with a 100ms deadline", elapsed)
 	}
 	if !sawCancel.Load() {
-		t.Fatal("Shutdown returned before the running job saw its context cancelled")
+		t.Fatal("Shutdown returned before the cancelled job finished cleaning up: it must wait for the workers after cancelling")
 	}
 	if got := ran.Load(); got != 0 {
 		t.Fatalf("%d queued jobs started after the deadline, want 0", got)
